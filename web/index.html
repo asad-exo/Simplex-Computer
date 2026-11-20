@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simplex Computer Simulator & WebUI</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo-area">
+            <h1>
+                Simplex Computer
+                <span class="logo-badge">16-BIT ARCHITECTURE</span>
+            </h1>
+            <div class="subtitle">
+                CS222 Computer Organization &amp; Assembly Language · GIK Institute (2021) · Asad Shahab, Shams Ghani, Mahad Iqbal, Ahmed Bin Faisal
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <div class="slider-group">
+                <span>Speed:</span>
+                <input type="range" id="clock-speed" min="1" max="100" value="20">
+                <span id="speed-label" style="min-width: 48px;">20 Hz</span>
+            </div>
+
+            <select id="opcode-mode-select" class="select-control" title="Choose Opcode Mapping">
+                <option value="CU">Hardwired CU (M0..M15, Sec 8/10)</option>
+                <option value="TABLE">Table 5.2 (Page 9 Order)</option>
+            </select>
+
+            <button id="btn-run" class="btn btn-success" title="Run continuous clock">▶ Run</button>
+            <button id="btn-step-inst" class="btn btn-primary" title="Execute one full instruction">⏭ Step Inst</button>
+            <button id="btn-step-micro" class="btn btn-outline" title="Single clock pulse / micro-operation">⏱ Micro-Step</button>
+            <button id="btn-reset" class="btn btn-danger" title="Reset CPU Registers">↺ Reset CPU</button>
+            <button id="btn-interrupt" class="btn btn-outline" title="Trigger external hardware interrupt">⚡ Interrupt</button>
+        </div>
+    </header>
+
+    <!-- Timing & Status Ribbon -->
+    <div class="timing-ribbon">
+        <div class="micro-op-box">
+            <div class="micro-op-label">Active Micro-Operation</div>
+            <div id="active-micro-op" class="micro-op-display">T0: Fetch instruction</div>
+        </div>
+
+        <div class="cu-state">
+            <div class="cu-tag">Mode: <b id="cu-mode">A0 (Direct)</b></div>
+            <div class="cu-tag">Opcode: <b id="cu-op">D0 (AND)</b></div>
+            <div class="cu-tag">GPR: <b id="cu-gpr">0</b></div>
+            <div class="cu-tag">Cycles: <b id="cu-cycles">0</b></div>
+            <div class="cu-tag">Inst: <b id="cu-insts">0</b></div>
+        </div>
+
+        <div class="sc-led-bar" title="Sequence Counter (T0..T15)">
+            <div class="sc-led active" id="led-t0">T0</div>
+            <div class="sc-led" id="led-t1">T1</div>
+            <div class="sc-led" id="led-t2">T2</div>
+            <div class="sc-led" id="led-t3">T3</div>
+            <div class="sc-led" id="led-t4">T4</div>
+            <div class="sc-led" id="led-t5">T5</div>
+            <div class="sc-led" id="led-t6">T6</div>
+            <div class="sc-led" id="led-t7">T7</div>
+            <div class="sc-led" id="led-t8">T8</div>
+            <div class="sc-led" id="led-t9">T9</div>
+            <div class="sc-led" id="led-t10">T10</div>
+            <div class="sc-led" id="led-t11">T11</div>
+            <div class="sc-led" id="led-t12">T12</div>
+            <div class="sc-led" id="led-t13">T13</div>
+            <div class="sc-led" id="led-t14">T14</div>
+            <div class="sc-led" id="led-t15">T15</div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="main-container">
+
+        <!-- Column Left: Code Editor & Assembler + Terminal -->
+        <div class="panel col-left">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span>💻 Assembly &amp; I/O</span>
+                </div>
+                <select id="example-select" class="select-control" style="max-width: 170px;">
+                    <option value="">Load Example...</option>
+                    <option value="addition">01. Addition (45+55)</option>
+                    <option value="subtraction">02. Subtraction &amp; SPB</option>
+                    <option value="multiply">03. Multiply with DSZ</option>
+                    <option value="fibonacci">04. Fibonacci Sequence</option>
+                    <option value="indexed">05. Indexed Array Sum</option>
+                    <option value="subroutine">06. Subroutine (JSR)</option>
+                    <option value="echo">07. Character Echo I/O</option>
+                    <option value="interrupt">08. Hardware Interrupt</option>
+                </select>
+            </div>
+
+            <div class="panel-body">
+                <div class="tab-bar">
+                    <button class="tab-btn active" data-tab="tab-editor">Editor</button>
+                    <button class="tab-btn" data-tab="tab-listing">Listing</button>
+                    <button class="tab-btn" data-tab="tab-symbols">Symbols</button>
+                </div>
+
+                <div id="tab-editor" class="tab-content active editor-container">
+                    <textarea id="asm-source" spellcheck="false" placeholder="Write Simplex Assembly here..."></textarea>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="btn-assemble" class="btn btn-primary" style="flex: 1;">Assemble &amp; Load</button>
+                        <button id="btn-clear-mem" class="btn btn-outline" title="Clear all memory words">Clear Mem</button>
+                    </div>
+                    <div id="asm-error" style="color: var(--accent-red); font-size: 0.75rem; font-family: var(--font-mono); display: none;"></div>
+                </div>
+
+                <div id="tab-listing" class="tab-content">
+                    <pre id="listing-output" class="code-listing">Assemble a program to view its machine code listing.</pre>
+                </div>
+
+                <div id="tab-symbols" class="tab-content">
+                    <pre id="symbols-output" class="code-listing">No symbols defined.</pre>
+                </div>
+
+                <!-- Teletype / I/O Terminal -->
+                <div class="panel-title" style="margin-top: 10px;">
+                    <span>📟 I/O Teletype Console</span>
+                </div>
+                <div class="terminal-box">
+                    <div id="terminal-screen" class="terminal-screen">Simplex Computer I/O Console Ready.\n&gt; </div>
+                    <div class="terminal-input-bar">
+                        <input type="text" id="terminal-input" placeholder="Type character/text and press Enter..." maxlength="64">
+                        <button id="btn-send-input">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column Center: Registers & Datapath Dashboard -->
+        <div class="panel col-center">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span>⚙️ CPU Registers &amp; Datapath</span>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    Click Flip-Flops to toggle
+                </div>
+            </div>
+
+            <div class="panel-body">
+
+                <!-- Flip-Flops Row -->
+                <div class="ff-bar">
+                    <div class="ff-badge" id="ff-s" title="S: Start/Stop computer flip-flop">
+                        <div class="ff-name">S (Run)</div>
+                        <div class="ff-val" id="val-ff-s">0</div>
+                    </div>
+                    <div class="ff-badge" id="ff-e" title="E: Extended carry accumulator flip-flop">
+                        <div class="ff-name">E (Carry)</div>
+                        <div class="ff-val" id="val-ff-e">0</div>
+                    </div>
+                    <div class="ff-badge" id="ff-r" title="R: Interrupt pending flip-flop">
+                        <div class="ff-name">R (Intr)</div>
+                        <div class="ff-val" id="val-ff-r">0</div>
+                    </div>
+                    <div class="ff-badge" id="ff-ien" title="IEN: Interrupt enable flip-flop">
+                        <div class="ff-name">IEN (IntEn)</div>
+                        <div class="ff-val" id="val-ff-ien">0</div>
+                    </div>
+                    <div class="ff-badge" id="ff-fgi" title="FGI: Input flag flip-flop">
+                        <div class="ff-name">FGI (InFlg)</div>
+                        <div class="ff-val" id="val-ff-fgi">0</div>
+                    </div>
+                    <div class="ff-badge" id="ff-fgo" title="FGO: Output flag flip-flop">
+                        <div class="ff-name">FGO (OutFlg)</div>
+                        <div class="ff-val" id="val-ff-fgo">1</div>
+                    </div>
+                </div>
+
+                <!-- Registers Grid -->
+                <div class="registers-grid">
+
+                    <!-- AC -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">AC</span>
+                            <span class="reg-desc">Accumulator (16-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-ac-hex">0000</span>
+                            <span class="reg-dec" id="reg-ac-dec">(0)</span>
+                        </div>
+                        <div class="reg-bits" id="bits-ac"></div>
+                    </div>
+
+                    <!-- DR -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">DR / TDR</span>
+                            <span class="reg-desc">Data Register (16-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-dr-hex">0000</span>
+                            <span class="reg-dec" id="reg-dr-dec">(0)</span>
+                        </div>
+                        <div class="reg-bits" id="bits-dr"></div>
+                    </div>
+
+                    <!-- IR -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">IR</span>
+                            <span class="reg-desc">Instruction Register (16-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-ir-hex">0000</span>
+                            <span class="reg-dec" id="reg-ir-dec">NOP</span>
+                        </div>
+                        <div class="reg-bits" id="bits-ir"></div>
+                    </div>
+
+                    <!-- PC -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">PC</span>
+                            <span class="reg-desc">Program Counter (9-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-pc-hex">000</span>
+                            <span class="reg-dec" id="reg-pc-dec">(0)</span>
+                        </div>
+                        <div class="reg-bits" id="bits-pc"></div>
+                    </div>
+
+                    <!-- AR -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">AR</span>
+                            <span class="reg-desc">Address Register (9-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-ar-hex">000</span>
+                            <span class="reg-dec" id="reg-ar-dec">(0)</span>
+                        </div>
+                        <div class="reg-bits" id="bits-ar"></div>
+                    </div>
+
+                    <!-- INDR -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">INDR</span>
+                            <span class="reg-desc">Index Register (9-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-indr-hex">000</span>
+                            <span class="reg-dec" id="reg-indr-dec">(0)</span>
+                        </div>
+                        <div class="reg-bits" id="bits-indr"></div>
+                    </div>
+
+                    <!-- IOB -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">IOB / INPR / OUTR</span>
+                            <span class="reg-desc">I/O Registers</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-iob-hex">000</span>
+                            <span class="reg-dec" id="reg-iob-dec">IN: 00 | OUT: 00</span>
+                        </div>
+                        <div class="reg-bits" id="bits-iob"></div>
+                    </div>
+
+                    <!-- SC -->
+                    <div class="reg-card">
+                        <div class="reg-header">
+                            <span class="reg-name">SC</span>
+                            <span class="reg-desc">Sequence Counter (4-bit)</span>
+                        </div>
+                        <div class="reg-values">
+                            <span class="reg-hex" id="reg-sc-hex">0</span>
+                            <span class="reg-dec" id="reg-sc-dec">(T0)</span>
+                        </div>
+                        <div class="reg-bits" id="bits-sc"></div>
+                    </div>
+
+                </div>
+
+                <!-- Bus & Architecture Card -->
+                <div class="bus-card">
+                    <div>
+                        <b>16-Bit Common Bus System:</b>
+                        <span id="bus-source" style="color: var(--accent-cyan);">Bus Source: M[PC]</span>
+                    </div>
+                    <div>
+                        <span>Memory Direct: <b style="color: var(--accent-amber);">AR [8..0]</b></span>
+                        &nbsp;|&nbsp;
+                        <span class="bus-status-tag" id="bus-status">ACTIVE</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Column Right: Memory Viewer & Inspector -->
+        <div class="panel col-right">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span>🗄️ Memory (512 Words)</span>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <input type="text" id="jump-addr" class="input-control" placeholder="Addr (Hex)" style="width: 75px; padding: 4px 6px;">
+                    <button id="btn-jump" class="btn btn-outline" style="padding: 4px 8px;">Go</button>
+                </div>
+            </div>
+
+            <div class="panel-body" style="padding: 8px;">
+                <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; padding: 0 4px 4px 4px;">
+                    <span><b style="color: var(--accent-blue);">■ PC</b> Next Inst</span>
+                    <span><b style="color: var(--accent-amber);">■ AR</b> Memory Addr</span>
+                    <span>Click cell to edit</span>
+                </div>
+
+                <div class="memory-table-wrap">
+                    <table class="mem-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 48px;">Addr</th>
+                                <th style="width: 58px;">Hex</th>
+                                <th>Instruction</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mem-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="simplex.js"></script>
+    <script>
+        // Sample Programs Dictionary
+        const SAMPLE_PROGRAMS = {
+            addition: `/ Program: 01_addition.asm
+/ Calculates RESULT = NUM1 + NUM2
+
+ORG 000
+        LDB NUM1        / Load NUM1 into AC
+        ADD NUM2        / Add NUM2 to AC
+        STB RESULT      / Store AC into RESULT
+        STP             / Halt computer
+
+NUM1,   DEC 45
+NUM2,   DEC 55
+RESULT, DEC 0
+END`,
+
+            subtraction: `/ Program: 02_subtraction.asm
+/ Demonstrates 2's complement subtraction: DIFF = A - B
+/ And conditional skip on positive (SPB)
+
+ORG 000
+        LDB A           / Load A into AC
+        SUB B           / AC = A - B
+        STB DIFF        / Store difference
+        SPB             / Skip next if AC >= 0
+        JMP NEGATIVE
+        LDB ONE
+        STB IS_POS
+        STP
+
+NEGATIVE,
+        LDB ZERO
+        STB IS_POS
+        STP
+
+A,      DEC 80
+B,      DEC 35
+DIFF,   DEC 0
+IS_POS, DEC 0
+ZERO,   DEC 0
+ONE,    DEC 1
+END`,
+
+            multiply: `/ Program: 03_multiply_dsz.asm
+/ Multiplies X * Y using repeated addition and DSZ
+
+ORG 000
+        CLB             / Clear AC
+        STB PRODUCT     / Initialize PRODUCT = 0
+LOOP,   LDB PRODUCT     / Load current product
+        ADD MULTIPLICAND/ Add X
+        STB PRODUCT     / Store back to PRODUCT
+        DSZ MULTIPLIER  / Decrement Y; if 0, skip JMP
+        JMP LOOP        / Repeat
+        STP             / Done!
+
+MULTIPLICAND, DEC 12    / 12 * 6 = 72
+MULTIPLIER,   DEC 6
+PRODUCT,      DEC 0
+END`,
+
+            fibonacci: `/ Program: 04_fibonacci.asm
+/ Generates Fibonacci numbers in sequence
+
+ORG 000
+        LDB ZERO
+        STB FIB0
+        LDB ONE
+        STB FIB1
+
+FIB_LOOP,
+        LDB FIB0
+        ADD FIB1
+        STB NEXT_FIB
+        LDB FIB1
+        STB FIB0
+        LDB NEXT_FIB
+        STB FIB1
+        DSZ COUNT
+        JMP FIB_LOOP
+        STP
+
+FIB0,     DEC 0
+FIB1,     DEC 1
+NEXT_FIB, DEC 0
+COUNT,    DEC 6
+ZERO,     DEC 0
+ONE,      DEC 1
+END`,
+
+            indexed: `/ Program: 05_indexed_array.asm
+/ Uses Index Register (INDR) with LDIN & ADDIN
+
+ORG 000
+        LDIN ARRAY      / Load M[ARRAY + INDR] into AC
+        ADDIN ARRAY_NEXT/ Add M[ARRAY_NEXT + INDR]
+        STB TOTAL
+        STP
+
+TOTAL,      DEC 0
+ARRAY,      DEC 15
+ARRAY_NEXT, DEC 27
+END`,
+
+            subroutine: `/ Program: 06_subroutine.asm
+/ Subroutine call (JSR) and indirect return (JMP SUB I)
+
+ORG 000
+        LDB VALUE
+        JSR SQUARE
+        STB RESULT
+        STP
+
+VALUE,  DEC 7
+RESULT, DEC 0
+
+SQUARE, HEX 0000        / JSR saves return address here
+        STB OP1
+        STB COUNTER
+        CLB
+        STB ACCUM
+SQ_LOOP,
+        LDB ACCUM
+        ADD OP1
+        STB ACCUM
+        DSZ COUNTER
+        JMP SQ_LOOP
+        LDB ACCUM
+        JMP SQUARE I    / Return to caller!
+
+OP1,     DEC 0
+COUNTER, DEC 0
+ACCUM,   DEC 0
+END`,
+
+            echo: `/ Program: 07_echo_io.asm
+/ Polls input key via SKI, reads with INP, echoes with OUT
+
+ORG 000
+POLL_IN,
+        SKI             / Skip next if input ready (FGI == 1)
+        JMP POLL_IN     / Wait
+        INP             / Read character into AC
+        OUT             / Print character to console
+        CMP ESC_KEY     / Check if ESC key (0x1B)
+        SZB             / Skip if zero
+        JMP POLL_IN     / Continue polling
+        STP             / Exit on ESC
+
+ESC_KEY, HEX 001B
+END`,
+
+            interrupt: `/ Program: 08_interrupt.asm
+/ Hardware Interrupt Demo:
+/ Address 0: return address storage
+/ Address 1: ISR entry
+
+ORG 000
+        HEX 0000        / Address 0
+        / Address 1: ISR
+        LDB TICK_COUNT
+        INB
+        STB TICK_COUNT
+        ION             / Re-enable interrupts
+        JMP 000 I       / Return
+
+ORG 010
+MAIN,   ION             / Turn interrupt on
+BUSY,   JMP BUSY        / Endless loop
+
+TICK_COUNT, DEC 0
+END`
+        };
+
+        // Initialize Simulator and UI
+        let sim = new SimplexComputer("CU");
+        let asm = new Assembler("CU");
+        let runTimer = null;
+
+        // Cache DOM elements
+        const activeMicroOpEl = document.getElementById("active-micro-op");
+        const cuModeEl = document.getElementById("cu-mode");
+        const cuOpEl = document.getElementById("cu-op");
+        const cuGprEl = document.getElementById("cu-gpr");
+        const cuCyclesEl = document.getElementById("cu-cycles");
+        const cuInstsEl = document.getElementById("cu-insts");
+        const busSourceEl = document.getElementById("bus-source");
+        const busStatusEl = document.getElementById("bus-status");
+
+        const regAcHex = document.getElementById("reg-ac-hex");
+        const regAcDec = document.getElementById("reg-ac-dec");
+        const regDrHex = document.getElementById("reg-dr-hex");
+        const regDrDec = document.getElementById("reg-dr-dec");
+        const regIrHex = document.getElementById("reg-ir-hex");
+        const regIrDec = document.getElementById("reg-ir-dec");
+        const regPcHex = document.getElementById("reg-pc-hex");
+        const regPcDec = document.getElementById("reg-pc-dec");
+        const regArHex = document.getElementById("reg-ar-hex");
+        const regArDec = document.getElementById("reg-ar-dec");
+        const regIndrHex = document.getElementById("reg-indr-hex");
+        const regIndrDec = document.getElementById("reg-indr-dec");
+        const regIobHex = document.getElementById("reg-iob-hex");
+        const regIobDec = document.getElementById("reg-iob-dec");
+        const regScHex = document.getElementById("reg-sc-hex");
+        const regScDec = document.getElementById("reg-sc-dec");
+
+        const valFfS = document.getElementById("val-ff-s");
+        const valFfE = document.getElementById("val-ff-e");
+        const valFfR = document.getElementById("val-ff-r");
+        const valFfIen = document.getElementById("val-ff-ien");
+        const valFfFgi = document.getElementById("val-ff-fgi");
+        const valFfFgo = document.getElementById("val-ff-fgo");
+
+        const badgeFfS = document.getElementById("ff-s");
+        const badgeFfE = document.getElementById("ff-e");
+        const badgeFfR = document.getElementById("ff-r");
+        const badgeFfIen = document.getElementById("ff-ien");
+        const badgeFfFgi = document.getElementById("ff-fgi");
+        const badgeFfFgo = document.getElementById("ff-fgo");
+
+        const memTableBody = document.getElementById("mem-table-body");
+        const asmSource = document.getElementById("asm-source");
+        const listingOutput = document.getElementById("listing-output");
+        const symbolsOutput = document.getElementById("symbols-output");
+        const asmError = document.getElementById("asm-error");
+        const exampleSelect = document.getElementById("example-select");
+        const terminalScreen = document.getElementById("terminal-screen");
+        const terminalInput = document.getElementById("terminal-input");
+        const clockSpeedSlider = document.getElementById("clock-speed");
+        const speedLabel = document.getElementById("speed-label");
+        const opcodeModeSelect = document.getElementById("opcode-mode-select");
+
+        // Helper to render bit leds
+        function renderBits(containerId, value, bitCount) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = "";
+            for (let i = bitCount - 1; i >= 0; i--) {
+                const bitVal = (value >> i) & 1;
+                const led = document.createElement("div");
+                led.className = `bit-led ${bitVal ? "on" : ""}`;
+                led.title = `Bit ${i}: ${bitVal}`;
+                container.appendChild(led);
+            }
+        }
+
+        // Render Memory Table (first 512 rows)
+        function initMemoryTable() {
+            memTableBody.innerHTML = "";
+            for (let i = 0; i < 512; i++) {
+                const row = document.createElement("tr");
+                row.id = `mem-row-${i}`;
+                row.innerHTML = `
+                    <td style="color: var(--text-muted);">${i.toString(16).padStart(3, "0").toUpperCase()}</td>
+                    <td id="mem-hex-${i}" class="mem-hex-cell" style="cursor: pointer;" title="Double click to edit">0000</td>
+                    <td id="mem-dis-${i}" style="color: var(--text-secondary);">NOP</td>
+                `;
+                row.addEventListener("dblclick", () => editMemoryCell(i));
+                memTableBody.appendChild(row);
+            }
+        }
+
+        function editMemoryCell(addr) {
+            const currentVal = sim.memory[addr].toString(16).padStart(4, "0").toUpperCase();
+            const newValStr = prompt(`Edit Word at 0x${addr.toString(16).padStart(3, "0").toUpperCase()} (Hex):`, currentVal);
+            if (newValStr !== null) {
+                const parsed = parseInt(newValStr, 16);
+                if (!isNaN(parsed)) {
+                    sim.memory[addr] = parsed & 0xFFFF;
+                    updateUI();
+                }
+            }
+        }
+
+        function updateUI() {
+            // Micro-operation display
+            activeMicroOpEl.textContent = sim.lastMicroOp;
+            cuCyclesEl.textContent = sim.cycleCount;
+            cuInstsEl.textContent = sim.instructionCount;
+
+            // Decoded status
+            let dec = sim.decodeInstruction(sim.IR);
+            let modeNames = ["A0 (Direct)", "A1 (Indirect)", "A2 (Indexed)", "A3 (Implied)"];
+            cuModeEl.textContent = modeNames[dec.mode];
+            cuOpEl.textContent = `D${dec.opcode} (${sim.disassemble(sim.IR).split(" ")[0]})`;
+            cuGprEl.textContent = dec.gpr;
+
+            // SC LEDs
+            for (let i = 0; i < 16; i++) {
+                const led = document.getElementById(`led-t${i}`);
+                if (led) {
+                    if (sim.SC === i && sim.S === 1) {
+                        led.classList.add("active");
+                    } else {
+                        led.classList.remove("active");
+                    }
+                }
+            }
+
+            // Bus source text
+            if (sim.SC === 0) {
+                busSourceEl.textContent = `Bus: Memory M[PC=${sim.PC.toString(16).padStart(3, "0").toUpperCase()}] → IR`;
+            } else if (sim.SC === 1) {
+                busSourceEl.textContent = `Bus: IR[8..0] → AR`;
+            } else if (sim.SC === 2) {
+                busSourceEl.textContent = dec.mode === 1 ? `Bus: Memory M[AR] → AR` : (dec.mode === 2 ? `Bus: AR + INDR → AR` : `Bus: Internal`);
+            } else if (sim.SC >= 3) {
+                busSourceEl.textContent = `Bus: Memory Transfer M[AR=${sim.AR.toString(16).padStart(3, "0").toUpperCase()}]`;
+            } else {
+                busSourceEl.textContent = `Bus: Idle`;
+            }
+            busStatusEl.textContent = sim.S === 1 ? "RUNNING" : "HALTED";
+            busStatusEl.style.color = sim.S === 1 ? "var(--accent-green)" : "var(--accent-red)";
+
+            // Registers
+            regAcHex.textContent = sim.AC.toString(16).padStart(4, "0").toUpperCase();
+            regAcDec.textContent = `(${sim.AC > 32767 ? sim.AC - 65536 : sim.AC})`;
+
+            regDrHex.textContent = sim.DR.toString(16).padStart(4, "0").toUpperCase();
+            regDrDec.textContent = `(${sim.DR})`;
+
+            regIrHex.textContent = sim.IR.toString(16).padStart(4, "0").toUpperCase();
+            regIrDec.textContent = sim.disassemble(sim.IR);
+
+            regPcHex.textContent = sim.PC.toString(16).padStart(3, "0").toUpperCase();
+            regPcDec.textContent = `(${sim.PC})`;
+
+            regArHex.textContent = sim.AR.toString(16).padStart(3, "0").toUpperCase();
+            regArDec.textContent = `(${sim.AR})`;
+
+            regIndrHex.textContent = sim.INDR.toString(16).padStart(3, "0").toUpperCase();
+            regIndrDec.textContent = `(${sim.INDR})`;
+
+            regIobHex.textContent = sim.IOB.toString(16).padStart(3, "0").toUpperCase();
+            regIobDec.textContent = `IN: ${sim.INPR.toString(16).padStart(2, "0").toUpperCase()} | OUT: ${sim.OUTR.toString(16).padStart(2, "0").toUpperCase()}`;
+
+            regScHex.textContent = sim.SC.toString(16).toUpperCase();
+            regScDec.textContent = `(T${sim.SC})`;
+
+            // Register Bit LEDs
+            renderBits("bits-ac", sim.AC, 16);
+            renderBits("bits-dr", sim.DR, 16);
+            renderBits("bits-ir", sim.IR, 16);
+            renderBits("bits-pc", sim.PC, 9);
+            renderBits("bits-ar", sim.AR, 9);
+            renderBits("bits-indr", sim.INDR, 9);
+            renderBits("bits-iob", sim.IOB, 9);
+            renderBits("bits-sc", sim.SC, 4);
+
+            // Flip-flops
+            valFfS.textContent = sim.S;
+            valFfE.textContent = sim.E;
+            valFfR.textContent = sim.R;
+            valFfIen.textContent = sim.IEN;
+            valFfFgi.textContent = sim.FGI;
+            valFfFgo.textContent = sim.FGO;
+
+            badgeFfS.classList.toggle("active", sim.S === 1);
+            badgeFfE.classList.toggle("active", sim.E === 1);
+            badgeFfR.classList.toggle("active", sim.R === 1);
+            badgeFfIen.classList.toggle("active", sim.IEN === 1);
+            badgeFfFgi.classList.toggle("active", sim.FGI === 1);
+            badgeFfFgo.classList.toggle("active", sim.FGO === 1);
+
+            // Update visible memory cells
+            for (let i = 0; i < 512; i++) {
+                const hexEl = document.getElementById(`mem-hex-${i}`);
+                const disEl = document.getElementById(`mem-dis-${i}`);
+                const rowEl = document.getElementById(`mem-row-${i}`);
+
+                if (hexEl && disEl && rowEl) {
+                    const val = sim.memory[i];
+                    hexEl.textContent = val.toString(16).padStart(4, "0").toUpperCase();
+                    disEl.textContent = sim.disassemble(val);
+
+                    // Row highlight
+                    rowEl.className = "";
+                    if (i === sim.PC) rowEl.classList.add("row-pc");
+                    if (i === sim.AR) rowEl.classList.add("row-ar");
+                }
+            }
+
+            // Terminal screen sync
+            let outText = sim.getOutputText();
+            if (outText.length > 0) {
+                terminalScreen.textContent = `Simplex Computer I/O Console Ready.\n> ` + outText;
+            }
+        }
+
+        // Stepping & Control handlers
+        document.getElementById("btn-step-micro").addEventListener("click", () => {
+            pauseClock();
+            sim.stepMicro();
+            updateUI();
+        });
+
+        document.getElementById("btn-step-inst").addEventListener("click", () => {
+            pauseClock();
+            sim.stepInstruction();
+            updateUI();
+        });
+
+        const btnRun = document.getElementById("btn-run");
+        btnRun.addEventListener("click", () => {
+            if (runTimer) {
+                pauseClock();
+            } else {
+                startClock();
+            }
+        });
+
+        function startClock() {
+            if (sim.S === 0) sim.S = 1;
+            btnRun.textContent = "⏸ Pause";
+            btnRun.classList.remove("btn-success");
+            btnRun.classList.add("btn-danger");
+
+            const freq = parseInt(clockSpeedSlider.value, 10);
+            const intervalMs = Math.max(10, Math.floor(1000 / freq));
+
+            runTimer = setInterval(() => {
+                if (sim.S === 0) {
+                    pauseClock();
+                    updateUI();
+                    return;
+                }
+                // If high speed, execute multiple micro-steps per tick
+                if (freq >= 80) {
+                    for (let k = 0; k < 10; k++) {
+                        sim.stepMicro();
+                        if (sim.S === 0) break;
+                    }
+                } else {
+                    sim.stepMicro();
+                }
+                updateUI();
+            }, intervalMs);
+        }
+
+        function pauseClock() {
+            if (runTimer) {
+                clearInterval(runTimer);
+                runTimer = null;
+            }
+            btnRun.textContent = "▶ Run";
+            btnRun.classList.remove("btn-danger");
+            btnRun.classList.add("btn-success");
+        }
+
+        clockSpeedSlider.addEventListener("input", (e) => {
+            const freq = e.target.value;
+            speedLabel.textContent = `${freq} Hz`;
+            if (runTimer) {
+                pauseClock();
+                startClock();
+            }
+        });
+
+        document.getElementById("btn-reset").addEventListener("click", () => {
+            pauseClock();
+            sim.reset();
+            updateUI();
+        });
+
+        document.getElementById("btn-clear-mem").addEventListener("click", () => {
+            pauseClock();
+            sim.clearMemory();
+            updateUI();
+        });
+
+        document.getElementById("btn-interrupt").addEventListener("click", () => {
+            sim.FGI = 1;
+            alert("External interrupt triggered: FGI set to 1. If IEN=1, interrupt cycle will invoke on next cycle.");
+            updateUI();
+        });
+
+        // Flip-Flop manual toggles
+        badgeFfS.addEventListener("click", () => { sim.S = 1 - sim.S; updateUI(); });
+        badgeFfE.addEventListener("click", () => { sim.E = 1 - sim.E; updateUI(); });
+        badgeFfR.addEventListener("click", () => { sim.R = 1 - sim.R; updateUI(); });
+        badgeFfIen.addEventListener("click", () => { sim.IEN = 1 - sim.IEN; updateUI(); });
+        badgeFfFgi.addEventListener("click", () => { sim.FGI = 1 - sim.FGI; updateUI(); });
+        badgeFfFgo.addEventListener("click", () => { sim.FGO = 1 - sim.FGO; updateUI(); });
+
+        // Jump to Address
+        document.getElementById("btn-jump").addEventListener("click", () => {
+            const val = document.getElementById("jump-addr").value.trim();
+            const addr = parseInt(val, 16);
+            if (!isNaN(addr) && addr >= 0 && addr < 512) {
+                const row = document.getElementById(`mem-row-${addr}`);
+                if (row) {
+                    row.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+            }
+        });
+
+        // Assembler Handler
+        document.getElementById("btn-assemble").addEventListener("click", () => {
+            pauseClock();
+            const src = asmSource.value;
+            try {
+                asmError.style.display = "none";
+                const result = asm.assemble(src);
+                sim.loadProgram(result.machineCode, 0);
+
+                // Update listing & symbols view
+                listingOutput.textContent = result.listing.join("\n");
+
+                let symText = "";
+                for (let [k, v] of Object.entries(result.symbols)) {
+                    symText += `${k.padEnd(12)} = 0x${v.toString(16).padStart(3, "0").toUpperCase()} (${v})\n`;
+                }
+                symbolsOutput.textContent = symText || "No symbols.";
+
+                updateUI();
+                alert("Program successfully assembled and loaded to memory!");
+            } catch (err) {
+                asmError.style.display = "block";
+                asmError.textContent = err.message;
+            }
+        });
+
+        // Example program selection
+        exampleSelect.addEventListener("change", (e) => {
+            const val = e.target.value;
+            if (val && SAMPLE_PROGRAMS[val]) {
+                asmSource.value = SAMPLE_PROGRAMS[val];
+            }
+        });
+
+        // Opcode Mode Selection
+        opcodeModeSelect.addEventListener("change", (e) => {
+            const mode = e.target.value;
+            sim.setOpcodeMode(mode);
+            asm.computer.setOpcodeMode(mode);
+            updateUI();
+        });
+
+        // Tabs
+        document.querySelectorAll(".tab-btn").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+                btn.classList.add("active");
+                const targetId = btn.getAttribute("data-tab");
+                document.getElementById(targetId).classList.add("active");
+            });
+        });
+
+        // Terminal Input
+        document.getElementById("btn-send-input").addEventListener("click", sendTerminalInput);
+        terminalInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                sendTerminalInput();
+            }
+        });
+
+        function sendTerminalInput() {
+            const text = terminalInput.value;
+            if (text.length > 0) {
+                sim.queueInput(text);
+                terminalInput.value = "";
+                updateUI();
+            }
+        }
+
+        // Initialize on load
+        initMemoryTable();
+        asmSource.value = SAMPLE_PROGRAMS.addition;
+        updateUI();
+    </script>
+</body>
+</html>
