@@ -96,6 +96,33 @@ RT2: PC ← PC + 1,  IEN ← 0,  R ← 0,  SC ← 0
 
 The report also covers the I/O configuration, the control logic for the address register and accumulator, and the full microoperation table for every instruction.
 
+## Simulator & Web UI
+
+A complete register-transfer level simulator and interactive Web UI have been implemented based on the design report specifications.
+
+### Features
+- **Accurate Micro-operation Cycle Simulation:** Step through clock pulses `T0`–`T15` or full instruction cycles, displaying live register transfers, control signals (`D0`–`D15`, `A0`–`A3`), and bus activities.
+- **Full Architecture Support:** Accumulator (AC), Data Register (DR), Instruction Register (IR), Address Register (AR), Program Counter (PC), Index Register (INDR), I/O Buffer (IOB), Sequence Counter (SC), and flip-flops (E, S, R, IEN, FGI, FGO).
+- **Two-Pass Assembler:** Supports labels, decimal/hex/binary/string pseudo-ops (`ORG`, `DEC`, `HEX`, `BIN`, `CHR`, `STR`, `END`), direct, indirect (`I`), and indexed (`X`) addressing.
+- **Teletype I/O Console:** Interactive character/string input and output with interrupt support.
+- **Dual Opcode Encoding Support:** Section 8/10 Hardwired CU decoders (`M0`–`M15`) and Section 5 Table 5.2.
+- **Preloaded Demos:** Addition, Subtraction & SPB, Multiply using DSZ, Fibonacci series, Indexed array sum, Subroutine calls (JSR), Echo I/O, and Hardware Interrupt Service Routine.
+
+### Quick Start
+
+```bash
+# 1. Launch the interactive Web UI
+python run_simulator.py
+
+# 2. Run an assembly program in the terminal (with micro-op trace)
+python run_simulator.py -f examples/03_multiply_dsz.asm --trace
+
+# 3. Run the automated unit test suite
+python run_simulator.py --test
+```
+
+Alternatively, open `web/index.html` directly in any web browser for a 100% client-side, zero-dependency experience.
+
 ## Team
 
 **Asad Shahab** · Shams Ghani · Mahad Iqbal · Ahmed Bin Faisal
